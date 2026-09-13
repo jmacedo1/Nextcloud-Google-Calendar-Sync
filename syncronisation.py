@@ -5,13 +5,13 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from caldav import DAVClient
 
-# Scopes pour l'API Google Calendar
+# Permisos (scopes) para la API de Google Calendar
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
-# Chemin vers le fichier credentials pour Google API
+# Ruta al archivo de credenciales para la API de Google
 CREDENTIALS_FILE = './credentials.json'
 
-# Connexion à l'API Google Calendar
+# Conexión a la API de Google Calendar
 def connect_google_calendar():
     creds = None
     if os.path.exists('token.json'):
@@ -29,18 +29,18 @@ def connect_google_calendar():
     service = build('calendar', 'v3', credentials=creds)
     return service
 
-# Connexion au calendrier Nextcloud via CalDAV
+# Conexión al calendario de Nextcloud vía CalDAV
 def connect_nextcloud_calendar():
     client = DAVClient(
         url='https://enfantmeme.onthewifi.com/nextcloud/remote.php/dav',
-        username='',#votre nom d'utilisateur d'application nextcloud
-        password=''#votre mot de passe d'application nextcloud
+        username='',#tu nombre de usuario de aplicación de Nextcloud
+        password=''#tu contraseña de aplicación de Nextcloud
     )
     principal = client.principal()
     calendars = principal.calendars()
-    return calendars[0]  # Supposons que tu utilises le premier calendrier
+    return calendars[0]  # Suponemos que usas el primer calendario
 
-# Récupérer les événements de Google Calendar
+# Obtener los eventos de Google Calendar
 def get_google_events(service):
     now = datetime.datetime.utcnow().isoformat() + 'Z'
     events_result = service.events().list(calendarId='primary', timeMin=now,
@@ -51,9 +51,9 @@ def get_google_events(service):
     google_events = []
     
     for event in events:
-        event_summary = event.get('summary', 'No Title')
+        event_summary = event.get('summary', 'Sin título')
 
-        # Vérification si l'événement est sur une journée entière ou plusieurs jours
+        # Comprobar si el evento dura todo el día o varios días
         if 'dateTime' in event['start']:
             start = event['start']['dateTime']
             end = event['end']['dateTime']
@@ -69,21 +69,21 @@ def get_google_events(service):
     
     return google_events
 
-# Récupérer les événements de Nextcloud
+# Obtener los eventos de Nextcloud
 def get_nextcloud_events(calendar):
     start = datetime.datetime.now()
     end = start + datetime.timedelta(days=30)
     events = calendar.date_search(start=start, end=end, expand=True)
     return events
 
-# Synchroniser les événements Google vers Nextcloud
+# Sincronizar los eventos de Google hacia Nextcloud
 def sync_google_to_nextcloud(google_events, nextcloud_calendar):
     for event in google_events:
         event_summary = event['summary']
         start = event['start']
         end = event['end']
 
-        # Convertir les dates en format datetime
+        # Convertir las fechas al formato datetime
         if "T" in start:
             start_dt = datetime.datetime.strptime(start[:19], "%Y-%m-%dT%H:%M:%S")
             end_dt = datetime.datetime.strptime(end[:19], "%Y-%m-%dT%H:%M:%S")
@@ -91,12 +91,12 @@ def sync_google_to_nextcloud(google_events, nextcloud_calendar):
             start_dt = datetime.datetime.strptime(start, "%Y-%m-%d")
             end_dt = datetime.datetime.strptime(end, "%Y-%m-%d")
 
-        # Vérifie si l'événement existe déjà dans Nextcloud
+        # Comprobar si el evento ya existe en Nextcloud
         nc_events = get_nextcloud_events(nextcloud_calendar)
         event_exists = any(event_summary in nc_event.data for nc_event in nc_events)
 
         if not event_exists:
-            # Ajouter l'événement à Nextcloud avec le bon format
+            # Añadir el evento a Nextcloud con el formato correcto
             if "T" in start:
                 ical_event = f"""BEGIN:VCALENDAR
 VERSION:2.0
@@ -119,9 +119,9 @@ END:VEVENT
 END:VCALENDAR"""
 
             nextcloud_calendar.save_event(ical_event)
-            print(f"Ajouté à Nextcloud: {event_summary}")
+            print(f"Añadido a Nextcloud: {event_summary}")
 
-# Synchroniser les événements Nextcloud vers Google
+# Sincronizar los eventos de Nextcloud hacia Google
 def sync_nextcloud_to_google(service, nextcloud_calendar):
     nc_events = get_nextcloud_events(nextcloud_calendar)
     
@@ -134,26 +134,26 @@ def sync_nextcloud_to_google(service, nextcloud_calendar):
         if summary_line and start_line:
             event_summary = summary_line[0].split(":")[1]
             start = start_line[0].split(":")[1]
-            end = end_line[0].split(":")[1] if end_line else start  # Si pas de ligne de fin, on prend le début pour événement d'une journée
+            end = end_line[0].split(":")[1] if end_line else start  # Si no hay línea de fin, se usa el inicio para eventos de un solo día
 
-            # Gestion des événements avec ou sans heure
+            # Gestión de eventos con o sin hora
             if "T" in start:
-                # Format avec heure
+                # Formato con hora
                 start_dt = datetime.datetime.strptime(start, "%Y%m%dT%H%M%SZ")
                 end_dt = datetime.datetime.strptime(end, "%Y%m%dT%H%M%SZ") if "T" in end else None
             else:
-                # Format sans heure (événement d'une ou plusieurs journées entières)
+                # Formato sin hora (evento de uno o varios días completos)
                 start_dt = datetime.datetime.strptime(start, "%Y%m%d")
                 end_dt = datetime.datetime.strptime(end, "%Y%m%d") if end else start_dt + datetime.timedelta(days=1)
 
-            # Vérifier si l'événement existe déjà sur Google Calendar
+            # Comprobar si el evento ya existe en Google Calendar
             google_events = get_google_events(service)
             event_exists = any(event_summary in g_event['summary'] for g_event in google_events)
-            
+
             if not event_exists:
-                # Ajouter l'événement à Google Calendar
+                # Añadir el evento a Google Calendar
                 if "T" in start:
-                    # Format avec heure (événement précis)
+                    # Formato con hora (evento con hora exacta)
                     event = {
                         'summary': event_summary,
                         'start': {
@@ -166,7 +166,7 @@ def sync_nextcloud_to_google(service, nextcloud_calendar):
                         },
                     }
                 else:
-                    # Format sans heure (événement d'une ou plusieurs journées entières)
+                    # Formato sin hora (evento de uno o varios días completos)
                     event = {
                         'summary': event_summary,
                         'start': {
@@ -180,20 +180,20 @@ def sync_nextcloud_to_google(service, nextcloud_calendar):
                     }
                 
                 service.events().insert(calendarId='primary', body=event).execute()
-                print(f"Ajouté à Google: {event_summary}")
+                print(f"Añadido a Google: {event_summary}")
 
 def main():
-    # Connexion à Google Calendar
+    # Conexión a Google Calendar
     google_service = connect_google_calendar()
 
-    # Connexion à Nextcloud Calendar
+    # Conexión al calendario de Nextcloud
     nextcloud_calendar = connect_nextcloud_calendar()
 
-    # Synchroniser Google vers Nextcloud
+    # Sincronizar Google hacia Nextcloud
     google_events = get_google_events(google_service)
     sync_google_to_nextcloud(google_events, nextcloud_calendar)
 
-    # Synchroniser Nextcloud vers Google
+    # Sincronizar Nextcloud hacia Google
     sync_nextcloud_to_google(google_service, nextcloud_calendar)
 
 if __name__ == '__main__':
