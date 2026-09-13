@@ -28,7 +28,14 @@ Para conseguir el `credentials.json` necesitas crear un proyecto en Google Cloud
 
 ## Instalar dependencias
 
-En Debian/Ubuntu recientes, `pip` no deja instalar paquetes a nivel de sistema (PEP 668), así que usa un entorno virtual dentro del proyecto:
+En Debian/Ubuntu recientes, `pip` no deja instalar paquetes a nivel de sistema (PEP 668), así que usa un entorno virtual dentro del proyecto. Si tu sistema no tiene ya `venv`/`pip` de Python (por ejemplo, en imágenes mínimas como DietPi), instálalos primero:
+
+```bash
+sudo apt update
+sudo apt install -y python3-venv python3-pip
+```
+
+Y luego crea el entorno e instala las dependencias:
 
 ```bash
 python3 -m venv venv
