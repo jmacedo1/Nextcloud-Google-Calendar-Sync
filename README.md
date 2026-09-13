@@ -38,6 +38,20 @@ pip install google-auth-oauthlib google-api-python-client caldav icalendar
 
 Cada vez que abras una terminal nueva para ejecutar el script, reactiva el entorno con `source venv/bin/activate` (o selecciona el intérprete `venv/bin/python` en VS Code).
 
+## Configurar Nextcloud y los calendarios a sincronizar
+
+Copia la plantilla [`nextcloud_config.example.py`](nextcloud_config.example.py) a `nextcloud_config.py` (ese nombre exacto) y rellena tus datos — este segundo archivo está en `.gitignore` y nunca se sube al repositorio, es donde van tus credenciales reales:
+
+```bash
+cp nextcloud_config.example.py nextcloud_config.py
+```
+
+Dentro de `nextcloud_config.py` tienes que indicar:
+
+- **`NEXTCLOUD_URL`**: la URL raíz de WebDAV de tu Nextcloud (termina en `/remote.php/dav/`).
+- **`NEXTCLOUD_USERNAME`** y **`NEXTCLOUD_PASSWORD`**: tu usuario de Nextcloud y una contraseña de aplicación (Configuración → Seguridad → "Contraseñas de aplicación y dispositivos" — nunca tu contraseña normal).
+- **`CALENDAR_PAIRS`**: la lista de parejas que quieres sincronizar, cada una con el **ID del calendario de Google** (`'primary'` para el principal, o el ID de uno secundario) y la **URL del calendario de Nextcloud** correspondiente. Puedes añadir tantas parejas como quieras — cada una se sincroniza de forma independiente.
+
 Durante la primera ejecución, se te pedirá que inicies sesión con la cuenta de Google que quieres sincronizar (esto creará un archivo token que te reconectará automáticamente en cada ejecución posterior). Inicia sesión y tu calendario se sincronizará ¡en ambos sentidos!
 
 (Después puedes configurarlo como una tarea cron en un servidor Linux, pero eso queda fuera del alcance de este tutorial.)
