@@ -26,6 +26,18 @@ Para conseguir el `credentials.json` necesitas crear un proyecto en Google Cloud
 <img width="489" alt="image" src="https://github.com/user-attachments/assets/e0ec9fbc-3957-4c99-8673-445d16107763"> 
 <img width="451" alt="image" src="https://github.com/user-attachments/assets/0462ea60-1c66-475a-9119-44e2aa503ab5">
 
+## Instalar dependencias
+
+En Debian/Ubuntu recientes, `pip` no deja instalar paquetes a nivel de sistema (PEP 668), así que usa un entorno virtual dentro del proyecto:
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install google-auth-oauthlib google-api-python-client caldav
+```
+
+Cada vez que abras una terminal nueva para ejecutar el script, reactiva el entorno con `source venv/bin/activate` (o selecciona el intérprete `venv/bin/python` en VS Code).
+
 Durante la primera ejecución, se te pedirá que inicies sesión con la cuenta de Google que quieres sincronizar (esto creará un archivo token que te reconectará automáticamente en cada ejecución posterior). Inicia sesión y tu calendario se sincronizará ¡en ambos sentidos!
 
 (Después puedes configurarlo como una tarea cron en un servidor Linux, pero eso queda fuera del alcance de este tutorial.)
