@@ -21,3 +21,7 @@ Durante la primera ejecución, se te pedirá que inicies sesión con la cuenta d
 ---
 
 Fork en castellano de [enfantme/Nextcloud-Google-Calendar-Sync](https://github.com/enfantme/Nextcloud-Google-Calendar-Sync).
+
+## Licencia
+
+Este fork se distribuye bajo licencia [MIT](LICENSE).
