@@ -5,7 +5,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from caldav import DAVClient, Calendar
 from icalendar import Calendar as ICalCalendar
-from nextcloud_config import NEXTCLOUD_URL, NEXTCLOUD_USERNAME, NEXTCLOUD_PASSWORD, NEXTCLOUD_CALENDAR_URL
+from nextcloud_config import NEXTCLOUD_URL, NEXTCLOUD_USERNAME, NEXTCLOUD_PASSWORD, CALENDAR_PAIRS
 
 # Permisos (scopes) para la API de Google Calendar
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -34,21 +34,20 @@ def connect_google_calendar():
     service = build('calendar', 'v3', credentials=creds)
     return service
 
-# Conexión al calendario de Nextcloud vía CalDAV
-def connect_nextcloud_calendar():
-    client = DAVClient(
+# Conexión al servidor de Nextcloud vía CalDAV (compartida para todos los calendarios)
+def connect_nextcloud_client():
+    return DAVClient(
         url=NEXTCLOUD_URL,
         username=NEXTCLOUD_USERNAME,
         password=NEXTCLOUD_PASSWORD
     )
-    return Calendar(client=client, url=NEXTCLOUD_CALENDAR_URL)
 
-# Obtener los eventos de Google Calendar
-def get_google_events(service):
+# Obtener los eventos de un calendario de Google Calendar
+def get_google_events(service, google_calendar_id='primary'):
     now = datetime.datetime.utcnow()
     time_min = now.isoformat() + 'Z'
     time_max = (now + datetime.timedelta(days=SYNC_DAYS)).isoformat() + 'Z'
-    events_result = service.events().list(calendarId='primary', timeMin=time_min,
+    events_result = service.events().list(calendarId=google_calendar_id, timeMin=time_min,
                                           timeMax=time_max,
                                           maxResults=100, singleEvents=True,
                                           orderBy='startTime').execute()
@@ -136,9 +135,9 @@ END:VCALENDAR"""
             print(f"Añadido a Nextcloud: {event_summary}")
 
 # Sincronizar los eventos de Nextcloud hacia Google
-def sync_nextcloud_to_google(service, nextcloud_calendar):
+def sync_nextcloud_to_google(service, nextcloud_calendar, google_calendar_id='primary'):
     nc_events = get_nextcloud_events(nextcloud_calendar)
-    google_events = get_google_events(service)
+    google_events = get_google_events(service, google_calendar_id)
     existing_summaries = {g_event['summary'] for g_event in google_events}
 
     for nc_event in nc_events:
@@ -185,7 +184,7 @@ def sync_nextcloud_to_google(service, nextcloud_calendar):
                 },
             }
 
-        service.events().insert(calendarId='primary', body=event).execute()
+        service.events().insert(calendarId=google_calendar_id, body=event).execute()
         existing_summaries.add(event_summary)
         print(f"Añadido a Google: {event_summary}")
 
@@ -193,15 +192,20 @@ def main():
     # Conexión a Google Calendar
     google_service = connect_google_calendar()
 
-    # Conexión al calendario de Nextcloud
-    nextcloud_calendar = connect_nextcloud_calendar()
+    # Conexión al servidor de Nextcloud (compartida para todos los calendarios)
+    nextcloud_client = connect_nextcloud_client()
 
-    # Sincronizar Google hacia Nextcloud
-    google_events = get_google_events(google_service)
-    sync_google_to_nextcloud(google_events, nextcloud_calendar)
+    # Sincronizar cada pareja (calendario de Google, calendario de Nextcloud)
+    for google_calendar_id, nextcloud_calendar_url in CALENDAR_PAIRS:
+        print(f"--- Sincronizando {google_calendar_id} <-> {nextcloud_calendar_url} ---")
+        nextcloud_calendar = Calendar(client=nextcloud_client, url=nextcloud_calendar_url)
 
-    # Sincronizar Nextcloud hacia Google
-    sync_nextcloud_to_google(google_service, nextcloud_calendar)
+        # Sincronizar Google hacia Nextcloud
+        google_events = get_google_events(google_service, google_calendar_id)
+        sync_google_to_nextcloud(google_events, nextcloud_calendar)
+
+        # Sincronizar Nextcloud hacia Google
+        sync_nextcloud_to_google(google_service, nextcloud_calendar, google_calendar_id)
 
 if __name__ == '__main__':
     main()
