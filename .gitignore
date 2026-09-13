@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+
+# Secretos de Google (no subir nunca)
+credentials.json
+token.json
+
+# Config local con tus credenciales de Nextcloud (no subir nunca)
+nextcloud_config.py

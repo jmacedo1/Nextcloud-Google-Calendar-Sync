@@ -33,7 +33,7 @@ En Debian/Ubuntu recientes, `pip` no deja instalar paquetes a nivel de sistema (
 ```bash
 python3 -m venv venv
 source venv/bin/activate
-pip install google-auth-oauthlib google-api-python-client caldav
+pip install google-auth-oauthlib google-api-python-client caldav icalendar
 ```
 
 Cada vez que abras una terminal nueva para ejecutar el script, reactiva el entorno con `source venv/bin/activate` (o selecciona el intérprete `venv/bin/python` en VS Code).

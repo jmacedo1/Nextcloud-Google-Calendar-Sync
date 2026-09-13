@@ -3,13 +3,18 @@ import datetime
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
-from caldav import DAVClient
+from caldav import DAVClient, Calendar
+from icalendar import Calendar as ICalCalendar
+from nextcloud_config import NEXTCLOUD_URL, NEXTCLOUD_USERNAME, NEXTCLOUD_PASSWORD, NEXTCLOUD_CALENDAR_URL
 
 # Permisos (scopes) para la API de Google Calendar
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 # Ruta al archivo de credenciales para la API de Google
 CREDENTIALS_FILE = './credentials.json'
+
+# Ventana de sincronización: desde hoy hasta este número de días adelante
+SYNC_DAYS = 30
 
 # Conexión a la API de Google Calendar
 def connect_google_calendar():
@@ -32,18 +37,19 @@ def connect_google_calendar():
 # Conexión al calendario de Nextcloud vía CalDAV
 def connect_nextcloud_calendar():
     client = DAVClient(
-        url='https://enfantmeme.onthewifi.com/nextcloud/remote.php/dav',
-        username='',#tu nombre de usuario de aplicación de Nextcloud
-        password=''#tu contraseña de aplicación de Nextcloud
+        url=NEXTCLOUD_URL,
+        username=NEXTCLOUD_USERNAME,
+        password=NEXTCLOUD_PASSWORD
     )
-    principal = client.principal()
-    calendars = principal.calendars()
-    return calendars[0]  # Suponemos que usas el primer calendario
+    return Calendar(client=client, url=NEXTCLOUD_CALENDAR_URL)
 
 # Obtener los eventos de Google Calendar
 def get_google_events(service):
-    now = datetime.datetime.utcnow().isoformat() + 'Z'
-    events_result = service.events().list(calendarId='primary', timeMin=now,
+    now = datetime.datetime.utcnow()
+    time_min = now.isoformat() + 'Z'
+    time_max = (now + datetime.timedelta(days=SYNC_DAYS)).isoformat() + 'Z'
+    events_result = service.events().list(calendarId='primary', timeMin=time_min,
+                                          timeMax=time_max,
                                           maxResults=100, singleEvents=True,
                                           orderBy='startTime').execute()
     events = events_result.get('items', [])
@@ -72,9 +78,17 @@ def get_google_events(service):
 # Obtener los eventos de Nextcloud
 def get_nextcloud_events(calendar):
     start = datetime.datetime.now()
-    end = start + datetime.timedelta(days=30)
+    end = start + datetime.timedelta(days=SYNC_DAYS)
     events = calendar.date_search(start=start, end=end, expand=True)
     return events
+
+# Extraer el SUMMARY real de un evento de Nextcloud, sin verse afectado
+# por el plegado de líneas largas del formato iCal (RFC 5545)
+def _nc_event_summary(nc_event):
+    ical = ICalCalendar.from_ical(nc_event.data)
+    for component in ical.walk('VEVENT'):
+        return str(component.get('summary', ''))
+    return ''
 
 # Sincronizar los eventos de Google hacia Nextcloud
 def sync_google_to_nextcloud(google_events, nextcloud_calendar):
@@ -93,7 +107,7 @@ def sync_google_to_nextcloud(google_events, nextcloud_calendar):
 
         # Comprobar si el evento ya existe en Nextcloud
         nc_events = get_nextcloud_events(nextcloud_calendar)
-        event_exists = any(event_summary in nc_event.data for nc_event in nc_events)
+        event_exists = any(_nc_event_summary(nc_event) == event_summary for nc_event in nc_events)
 
         if not event_exists:
             # Añadir el evento a Nextcloud con el formato correcto
@@ -124,63 +138,56 @@ END:VCALENDAR"""
 # Sincronizar los eventos de Nextcloud hacia Google
 def sync_nextcloud_to_google(service, nextcloud_calendar):
     nc_events = get_nextcloud_events(nextcloud_calendar)
-    
+    google_events = get_google_events(service)
+    existing_summaries = {g_event['summary'] for g_event in google_events}
+
     for nc_event in nc_events:
-        nc_event_data = nc_event.data
-        summary_line = [line for line in nc_event_data.split('\n') if line.startswith("SUMMARY:")]
-        start_line = [line for line in nc_event_data.split('\n') if line.startswith("DTSTART")]
-        end_line = [line for line in nc_event_data.split('\n') if line.startswith("DTEND")]
-        
-        if summary_line and start_line:
-            event_summary = summary_line[0].split(":")[1]
-            start = start_line[0].split(":")[1]
-            end = end_line[0].split(":")[1] if end_line else start  # Si no hay línea de fin, se usa el inicio para eventos de un solo día
+        ical = ICalCalendar.from_ical(nc_event.data)
+        vevent = next(iter(ical.walk('VEVENT')), None)
+        if vevent is None:
+            continue
 
-            # Gestión de eventos con o sin hora
-            if "T" in start:
-                # Formato con hora
-                start_dt = datetime.datetime.strptime(start, "%Y%m%dT%H%M%SZ")
-                end_dt = datetime.datetime.strptime(end, "%Y%m%dT%H%M%SZ") if "T" in end else None
-            else:
-                # Formato sin hora (evento de uno o varios días completos)
-                start_dt = datetime.datetime.strptime(start, "%Y%m%d")
-                end_dt = datetime.datetime.strptime(end, "%Y%m%d") if end else start_dt + datetime.timedelta(days=1)
+        event_summary = str(vevent.get('summary', 'Sin título'))
+        dtstart = vevent['dtstart'].dt
+        dtend_prop = vevent.get('dtend')
+        is_all_day = not isinstance(dtstart, datetime.datetime)
 
-            # Comprobar si el evento ya existe en Google Calendar
-            google_events = get_google_events(service)
-            event_exists = any(event_summary in g_event['summary'] for g_event in google_events)
+        if is_all_day:
+            dtend = dtend_prop.dt if dtend_prop else dtstart + datetime.timedelta(days=1)
+        else:
+            dtend = dtend_prop.dt if dtend_prop else dtstart + datetime.timedelta(hours=1)
+            # Normalizar a UTC los eventos con hora (vengan en UTC o con TZID)
+            if dtstart.tzinfo:
+                dtstart = dtstart.astimezone(datetime.timezone.utc)
+            if dtend.tzinfo:
+                dtend = dtend.astimezone(datetime.timezone.utc)
 
-            if not event_exists:
-                # Añadir el evento a Google Calendar
-                if "T" in start:
-                    # Formato con hora (evento con hora exacta)
-                    event = {
-                        'summary': event_summary,
-                        'start': {
-                            'dateTime': start_dt.isoformat() + 'Z',
-                            'timeZone': 'UTC',
-                        },
-                        'end': {
-                            'dateTime': (end_dt.isoformat() + 'Z') if end_dt else (start_dt + datetime.timedelta(hours=1)).isoformat() + 'Z',
-                            'timeZone': 'UTC',
-                        },
-                    }
-                else:
-                    # Formato sin hora (evento de uno o varios días completos)
-                    event = {
-                        'summary': event_summary,
-                        'start': {
-                            'date': start_dt.strftime('%Y-%m-%d'),
-                            'timeZone': 'UTC',
-                        },
-                        'end': {
-                            'date': end_dt.strftime('%Y-%m-%d'),
-                            'timeZone': 'UTC',
-                        },
-                    }
-                
-                service.events().insert(calendarId='primary', body=event).execute()
-                print(f"Añadido a Google: {event_summary}")
+        # Comprobar si el evento ya existe en Google Calendar
+        if event_summary in existing_summaries:
+            continue
+
+        if is_all_day:
+            event = {
+                'summary': event_summary,
+                'start': {'date': dtstart.strftime('%Y-%m-%d')},
+                'end': {'date': dtend.strftime('%Y-%m-%d')},
+            }
+        else:
+            event = {
+                'summary': event_summary,
+                'start': {
+                    'dateTime': dtstart.strftime('%Y-%m-%dT%H:%M:%S') + 'Z',
+                    'timeZone': 'UTC',
+                },
+                'end': {
+                    'dateTime': dtend.strftime('%Y-%m-%dT%H:%M:%S') + 'Z',
+                    'timeZone': 'UTC',
+                },
+            }
+
+        service.events().insert(calendarId='primary', body=event).execute()
+        existing_summaries.add(event_summary)
+        print(f"Añadido a Google: {event_summary}")
 
 def main():
     # Conexión a Google Calendar
